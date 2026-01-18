@@ -29,6 +29,12 @@ with st.sidebar:
         if kota.isdigit():
             kotalar[doktorlar.index(d)] = int(kota)
 
+    st.header("⚖️ Adalet Ayarları")
+    st.caption("Perşembe-Cuma denge hesaplamasına dahil edilmeyecek doktorları seçin (Örn: Kotası çok yüksek olanlar).")
+    hariç_tutulanlar = st.multiselect("Denge Dışı Bırakılacaklar", doktorlar)
+    hariç_idx = [doktorlar.index(d) for d in hariç_tutulanlar]
+    
+
 # --- TAKVİM HESAPLAMA (TATİLLERİ ÇIKARARAK) ---
 
 # --- TAKVİM HESAPLAMA (GELİŞTİRİLMİŞ TATİL AYRIŞTIRICI) ---
@@ -190,22 +196,55 @@ else:
 
         # 4. Kurallar (Grup, Üst Üste vb.)
         g1, g2 = [2, 10, 11], [3, 7, 9] # Grup kısıtları
+
+        #  Sayaçların Tanımlanması 
+        pc_gun_indisleri = [i for i, t in enumerate(is_gunleri) if t.weekday() in [3, 4]]
+        pc_sayaclari = []
+
+        for d in range(doktor_sayisi):
+            pc_count = model.NewIntVar(0, len(pc_gun_indisleri), f'pc_count_{d}')
+            model.Add(pc_count == sum(nobet[(d, g)] for g in pc_gun_indisleri))
+            pc_sayaclari.append(pc_count)
+
         for g in range(gun_sayisi):
-            model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Bendigar & Cemalettin
+            model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Ben & Cem
             model.Add(sum(nobet[(d, g)] for d in g1) <= 1)
             model.Add(sum(nobet[(d, g)] for d in g2) <= 1)
 
-            # ÜST ÜSTE NÖBET YASAĞI (DÜZELTİLDİ)
-            # Arada hafta sonu veya tatil olsa bile, listenin bir sonraki gününde nöbet yazılamaz.
-            for d in range(doktor_sayisi):
-                if g < gun_sayisi - 1:
-                    for d in range(doktor_sayisi):
-                        model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
+            if g < gun_sayisi - 1:
+                for d in range(doktor_sayisi):
+                    model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
+
+
+        
+##        g1, g2 = [2, 10, 11], [3, 7, 9] # Grup kısıtları
+##        for g in range(gun_sayisi):
+##            model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Bendigar & Cemalettin
+##            model.Add(sum(nobet[(d, g)] for d in g1) <= 1)
+##            model.Add(sum(nobet[(d, g)] for d in g2) <= 1)
+##
+##            # ÜST ÜSTE NÖBET YASAĞI (DÜZELTİLDİ)
+##            # Arada hafta sonu veya tatil olsa bile, listenin bir sonraki gününde nöbet yazılamaz.
+##            for d in range(doktor_sayisi):
+##                if g < gun_sayisi - 1:
+##                    for d in range(doktor_sayisi):
+##                        model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
 
         # 5. Kota ve Adalet
         toplam_nobetler = [sum(nobet[(d, g)] for g in range(gun_sayisi)) for d in range(doktor_sayisi)]
         for d_idx, h in kotalar.items():
             model.Add(toplam_nobetler[d_idx] == h)
+
+        # Esnek Denge Hesaplaması 
+        dahil_olanlar = [d for d in range(doktor_sayisi) if d not in hariç_idx]
+        pc_fark_puan = 0
+        if len(dahil_olanlar) > 1:
+            pc_max = model.NewIntVar(0, len(pc_gun_indisleri), 'pc_max')
+            pc_min = model.NewIntVar(0, len(pc_gun_indisleri), 'pc_min')
+            for d in dahil_olanlar:
+                model.Add(pc_max >= pc_sayaclari[d])
+                model.Add(pc_min <= pc_sayaclari[d])
+            pc_fark_puan = (pc_max - pc_min) * -30
 
         kotasizlar = [i for i in range(doktor_sayisi) if i not in kotalar]
         fark_puan = 0
@@ -218,7 +257,7 @@ else:
             model.Add(fark == max_n - min_n)
             fark_puan = fark * -50
 
-        model.Maximize(sum(tercih_puanlari) + fark_puan)
+        model.Maximize(sum(tercih_puanlari) + fark_puan + pc_fark_puan)
         
         solver = cp_model.CpSolver()
         status = solver.Solve(model)
@@ -233,14 +272,61 @@ else:
             st.dataframe(pd.DataFrame(res_data),height= 800, use_container_width=True)
             
             # Dağılım Özeti
+            # --- DETAYLI DAĞILIM ÖZETİ ---
             st.subheader("📊 Nöbet Dağılım Özeti")
-            ozet = {doktorlar[d]: solver.Value(toplam_nobetler[d]) for d in range(doktor_sayisi)}
-            st.write(ozet)
+            
+            ozet_verisi = []
+            for d_idx, d_isim in enumerate(doktorlar):
+                toplam = solver.Value(toplam_nobetler[d_idx])
+                pc_toplam = solver.Value(pc_sayaclari[d_idx]) # Perşembe-Cuma sayısı
+                
+                ozet_verisi.append({
+                    "Doktor": d_isim,
+                    "Toplam Nöbet": toplam,
+                    "P-C Nöbeti (Değerli)": pc_toplam,
+                    "Durum": "Denge Dışı" if d_idx in hariç_idx else "Dengelenmiş"
+                })
+            
+            # Tablo olarak göster
+            ozet_df = pd.DataFrame(ozet_verisi)
+            st.table(ozet_df) # veya st.dataframe(ozet_df, use_container_width=True)
+
+            
+##            st.subheader("📊 Nöbet Dağılım Özeti")
+##            ozet = {doktorlar[d]: solver.Value(toplam_nobetler[d]) for d in range(doktor_sayisi)}
+##            st.write(ozet)
             
             # İndirme Butonu
+# --- 2. SHEET İÇİN VERİ HAZIRLAMA (DOKTOR BAZLI YATAY LİSTE) ---
+            yatay_ozet = []
+            for d_isim in doktorlar:
+                # Bu doktorun nöbetçi olduğu tarihleri ve günleri bul
+                nobet_tarihleri = []
+                for gun_bilgisi in res_data:
+                    if d_isim in gun_bilgisi["Nöbetçiler"]:
+                        # "02.01.2026 Friday" formatında birleştiriyoruz
+                        tarih_ve_gun = f"{gun_bilgisi['Tarih'].split('.')[0]} {gun_bilgisi['Gün']}"
+                        nobet_tarihleri.append(tarih_ve_gun)
+                
+                yatay_ozet.append({
+                    "Doktor": d_isim,
+                    "Nöbet Tarihleri": ", ".join(nobet_tarihleri)
+                })
+            
+            # --- EXCEL OLUŞTURMA (2 SAYFALI) ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                pd.DataFrame(res_data).to_excel(writer, index=False)
-            st.download_button("📥 Excel İndir", output.getvalue(), f"nobet_{yil}_{ay}.xlsx")
+                # 1. Sayfa: Genel Liste
+                pd.DataFrame(res_data).to_excel(writer, index=False, sheet_name='Günlük Nöbet Listesi')
+                
+                # 2. Sayfa: Doktor Bazlı Özet
+                pd.DataFrame(yatay_ozet).to_excel(writer, index=False, sheet_name='Doktor Bazlı Takvim')
+            
+            st.download_button(
+                label="📥 Detaylı Excel İndir",
+                data=output.getvalue(),
+                file_name=f"nobet_detayli_{yil}_{ay}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         else:
             st.error("❌ Çözüm bulunamadı! Lütfen kotaları veya sabit nöbetçileri kontrol edin.")
