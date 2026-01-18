@@ -30,26 +30,59 @@ with st.sidebar:
             kotalar[doktorlar.index(d)] = int(kota)
 
 # --- TAKVİM HESAPLAMA (TATİLLERİ ÇIKARARAK) ---
+
+# --- TAKVİM HESAPLAMA (GELİŞTİRİLMİŞ TATİL AYRIŞTIRICI) ---
 is_gunleri = []
 tatil_gunleri_listesi = []
 
-# Tatil günlerini parse et (Aralık veya tek gün)
 if tatil_input:
     try:
-        if "-" in tatil_input:
-            t_bas, t_son = map(int, tatil_input.split("-"))
-            tatil_gunleri_listesi = list(range(t_bas, t_son + 1))
-        else:
-            tatil_gunleri_listesi = [int(tatil_input)]
-    except:
-        st.sidebar.error("Tatil formatı hatalı!")
+        # Girdiyi virgüllere göre parçala (Örn: "2, 8, 20-24" -> ["2", " 8", " 20-24"])
+        parcalar = [p.strip() for p in tatil_input.split(',')]
+        
+        for parca in parcalar:
+            if "-" in parca:
+                # Aralık varsa (Örn: "20-24")
+                t_bas, t_son = map(int, parca.split("-"))
+                tatil_gunleri_listesi.extend(list(range(t_bas, t_son + 1)))
+            else:
+                # Tek günse (Örn: "2")
+                tatil_gunleri_listesi.append(int(parca))
+        
+        # Mükerrer kayıtları temizle (Set kullanarak)
+        tatil_gunleri_listesi = sorted(list(set(tatil_gunleri_listesi)))
+        
+    except ValueError:
+        st.sidebar.error("Tatil formatı hatalı! Lütfen sayı ve tire (-) kullanın. Örn: 2, 8, 20-24")
 
+# Takvimi oluştururken bu listeyi kullan
 curr = datetime(int(yil), int(ay), 1)
 while curr.month == int(ay):
-    # Eğer hafta içiyse VE tatil günleri listesinde DEĞİLSE nöbet günü kabul et
+    # Hafta içi mi VE tatil listesinde yok mu?
     if curr.weekday() < 5 and curr.day not in tatil_gunleri_listesi:
         is_gunleri.append(curr)
     curr += timedelta(days=1)
+
+# is_gunleri = []
+# tatil_gunleri_listesi = []
+
+# # Tatil günlerini parse et (Aralık veya tek gün)
+# if tatil_input:
+    # try:
+        # if "-" in tatil_input:
+            # t_bas, t_son = map(int, tatil_input.split("-"))
+            # tatil_gunleri_listesi = list(range(t_bas, t_son + 1))
+        # else:
+            # tatil_gunleri_listesi = [int(tatil_input)]
+    # except:
+        # st.sidebar.error("Tatil formatı hatalı!")
+
+# curr = datetime(int(yil), int(ay), 1)
+# while curr.month == int(ay):
+    # # Eğer hafta içiyse VE tatil günleri listesinde DEĞİLSE nöbet günü kabul et
+    # if curr.weekday() < 5 and curr.day not in tatil_gunleri_listesi:
+        # is_gunleri.append(curr)
+    # curr += timedelta(days=1)
 
 gun_sayisi = len(is_gunleri)
 
@@ -96,6 +129,13 @@ else:
             model.Add(nobet[(d_idx, g_idx)] == 1)
 
         # 3. Tercihler ve İzinler
+        # --- GRUP TANIMLARI (İndis bazlı) ---
+        g0_tayfasi = [0, 1]          # Ben, Cem
+        g1_tayfasi = [2, 10, 11]     # Cer, Ser, Bek
+        g2_tayfasi = [3, 7, 9]       # Fe, Mü, Yı
+        tum_gruplar = [g0_tayfasi, g1_tayfasi, g2_tayfasi]
+
+        # 3. Tercihler ve İzinler (GELİŞTİRİLMİŞ)
         tercih_puanlari = []
         if izin_metni:
             for line in izin_metni.split('\n'):
@@ -106,14 +146,47 @@ else:
                         g_verisi = p[1].strip()
                         durum = int(p[2].strip())
                         
+                        # Gün listesini oluştur (Örn: 19-22 -> [19, 20, 21, 22])
                         g_list = list(range(int(g_verisi.split("-")[0]), int(g_verisi.split("-")[-1]) + 1)) if "-" in g_verisi else [int(g_verisi)]
+                        
                         for gn in g_list:
                             g_idx = next((i for i, t in enumerate(is_gunleri) if t.day == gn), None)
                             if g_idx is not None:
-                                if durum == 0: model.Add(nobet[(d_idx, g_idx)] == 0)
+                                # Kişinin kendi tercihi
+                                if durum == 0: 
+                                    model.Add(nobet[(d_idx, g_idx)] == 0)
+                                    
+                                    # YENİ KISIT: Grup arkadaşlarına yasak (Son gün hariç)
+                                    # Eğer gn listenin son elemanı değilse grup arkadaşlarına yasak koy
+                                    if gn != g_list[-1]:
+                                        # Bu doktor hangi grupta?
+                                        for grup in tum_gruplar:
+                                            if d_idx in grup:
+                                                for arkadas_idx in grup:
+                                                    if arkadas_idx != d_idx:
+                                                        model.Add(nobet[(arkadas_idx, g_idx)] == 0)
+                                
                                 elif durum == 1: tercih_puanlari.append(nobet[(d_idx, g_idx)] * 10)
                                 elif durum == 2: tercih_puanlari.append(nobet[(d_idx, g_idx)] * -10)
                     except: pass
+        # tercih_puanlari = []
+        # if izin_metni:
+            # for line in izin_metni.split('\n'):
+                # if ',' in line:
+                    # try:
+                        # p = line.split(',')
+                        # d_idx = doktorlar.index(p[0].strip().capitalize())
+                        # g_verisi = p[1].strip()
+                        # durum = int(p[2].strip())
+                        
+                        # g_list = list(range(int(g_verisi.split("-")[0]), int(g_verisi.split("-")[-1]) + 1)) if "-" in g_verisi else [int(g_verisi)]
+                        # for gn in g_list:
+                            # g_idx = next((i for i, t in enumerate(is_gunleri) if t.day == gn), None)
+                            # if g_idx is not None:
+                                # if durum == 0: model.Add(nobet[(d_idx, g_idx)] == 0)
+                                # elif durum == 1: tercih_puanlari.append(nobet[(d_idx, g_idx)] * 10)
+                                # elif durum == 2: tercih_puanlari.append(nobet[(d_idx, g_idx)] * -10)
+                    # except: pass
 
         # 4. Kurallar (Grup, Üst Üste vb.)
         g1, g2 = [2, 10, 11], [3, 7, 9] # Grup kısıtları
