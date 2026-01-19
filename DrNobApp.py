@@ -194,63 +194,45 @@ else:
                                 # elif durum == 2: tercih_puanlari.append(nobet[(d_idx, g_idx)] * -10)
                     # except: pass
 
-        # 4. Kurallar (Grup, Üst Üste vb.)
-        # --- 4. KURALLAR (Gelişmiş Yayılım ve Üst Üste Yasağı) ---
+        
+               # --- 4. KURALLAR (Gelişmiş Yayılım ve Üst Üste Yasağı) ---
         # Sidebar'da hariç tuttuğumuz yüksek kotalı doktorlar burada da kural dışı kalmalı
+        
         g1, g2 = [2, 10, 11], [3, 7, 9] # Grup kısıtları
 
-        #  Sayaçların Tanımlanması 
+        # SAYAÇLARI AKTİFLEŞTİRİYORUZ (Hatanın çözümü burası)
         pc_gun_indisleri = [i for i, t in enumerate(is_gunleri) if t.weekday() in [3, 4]]
         pc_sayaclari = []
 
-        # for d in range(doktor_sayisi):
-            # pc_count = model.NewIntVar(0, len(pc_gun_indisleri), f'pc_count_{d}')
-            # model.Add(pc_count == sum(nobet[(d, g)] for g in pc_gun_indisleri))
-            # pc_sayaclari.append(pc_count)
+        for d in range(doktor_sayisi):
+            pc_count = model.NewIntVar(0, len(pc_gun_indisleri), f'pc_count_{d}')
+            model.Add(pc_count == sum(nobet[(d, g)] for g in pc_gun_indisleri))
+            pc_sayaclari.append(pc_count)
 
-        # for g in range(gun_sayisi):
-            # model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Ben & Cem
-            # model.Add(sum(nobet[(d, g)] for d in g1) <= 1)
-            # model.Add(sum(nobet[(d, g)] for d in g2) <= 1)
+        # GRUP KISITLARINI AKTİFLEŞTİRİYORUZ
+        for g in range(gun_sayisi):
+            model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Ben & Cem
+            model.Add(sum(nobet[(d, g)] for d in g1) <= 1)
+            model.Add(sum(nobet[(d, g)] for d in g2) <= 1)
 
-            # if g < gun_sayisi - 1:
-                # for d in range(doktor_sayisi):
-                    # model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
-
-
-        dahil_olanlar = [d for d in range(doktor_sayisi) if d not in hariç_idx]
+        # HOMOJEN DAĞILIM VE ÜST ÜSTE YASAĞI
+        dahil_olanlar_homojen = [d for d in range(doktor_sayisi) if d not in hariç_idx]
 
         for d in range(doktor_sayisi):
             for g in range(gun_sayisi):
-                # Eğer doktor "dahil olanlar" listesindeyse (normal kotalıysa)
-                if d in dahil_olanlar:
-                    # Bugün nöbet tuttuysa, sonraki 2 gün tutamaz (Toplam 3 günlük blokta sadece 1 nöbet)
-                    # g, g+1, g+2 toplamı <= 1
+                if d in dahil_olanlar_homojen:
+                    # Normal doktorlar için 2 gün boşluk (Homojen dağılım)
                     aralik = [g, g+1, g+2]
                     valid_aralik = [i for i in aralik if i < gun_sayisi]
                     if len(valid_aralik) > 1:
                         model.Add(sum(nobet[(d, i)] for i in valid_aralik) <= 1)
                 else:
-                    # Yüksek kotalı veya hariç tutulanlar için sadece klasik 
-                    # "üst üste tutamaz" (1 gün boşluk) kuralı geçerli kalsın
+                    # Yüksek kotalı/hariç tutulanlar için sadece 1 gün boşluk
                     if g < gun_sayisi - 1:
                         model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
 
 
         
-##        g1, g2 = [2, 10, 11], [3, 7, 9] # Grup kısıtları
-##        for g in range(gun_sayisi):
-##            model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Bendigar & Cemalettin
-##            model.Add(sum(nobet[(d, g)] for d in g1) <= 1)
-##            model.Add(sum(nobet[(d, g)] for d in g2) <= 1)
-##
-##            # ÜST ÜSTE NÖBET YASAĞI (DÜZELTİLDİ)
-##            # Arada hafta sonu veya tatil olsa bile, listenin bir sonraki gününde nöbet yazılamaz.
-##            for d in range(doktor_sayisi):
-##                if g < gun_sayisi - 1:
-##                    for d in range(doktor_sayisi):
-##                        model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
-
         # 5. Kota ve Adalet
         toplam_nobetler = [sum(nobet[(d, g)] for g in range(gun_sayisi)) for d in range(doktor_sayisi)]
         for d_idx, h in kotalar.items():
@@ -351,4 +333,5 @@ else:
             )
         else:
             st.error("❌ Çözüm bulunamadı! Lütfen kotaları veya sabit nöbetçileri kontrol edin.")
+
 
