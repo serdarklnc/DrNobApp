@@ -2,6 +2,7 @@ import streamlit as st
 from ortools.sat.python import cp_model
 from datetime import datetime, timedelta
 import pandas as pd
+from openpyxl.styles import Alignment
 import io
 
 st.set_page_config(page_title="Doktor Nöbet Robotu", layout="wide")
@@ -364,7 +365,7 @@ else:
                     column = col[0].column_letter
                     worksheet.column_dimensions[column].width = 25 # Kutuları genişlet
                     for cell in col:
-                        cell.alignment = tk.openpyxl.styles.Alignment(wrapText=True, vertical='top', horizontal='center')
+                        cell.alignment = Alignment(wrapText=True, vertical='top', horizontal='center')
 
             st.download_button(
                 label="📥 Takvimli Excel İndir",
@@ -374,6 +375,7 @@ else:
             )
         else:
             st.error("❌ Çözüm bulunamadı! Lütfen kotaları veya sabit nöbetçileri kontrol edin.")
+
 
 
 
