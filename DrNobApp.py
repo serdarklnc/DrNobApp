@@ -195,25 +195,46 @@ else:
                     # except: pass
 
         # 4. Kurallar (Grup, Üst Üste vb.)
+        # --- 4. KURALLAR (Gelişmiş Yayılım ve Üst Üste Yasağı) ---
+        # Sidebar'da hariç tuttuğumuz yüksek kotalı doktorlar burada da kural dışı kalmalı
         g1, g2 = [2, 10, 11], [3, 7, 9] # Grup kısıtları
 
         #  Sayaçların Tanımlanması 
         pc_gun_indisleri = [i for i, t in enumerate(is_gunleri) if t.weekday() in [3, 4]]
         pc_sayaclari = []
 
+        # for d in range(doktor_sayisi):
+            # pc_count = model.NewIntVar(0, len(pc_gun_indisleri), f'pc_count_{d}')
+            # model.Add(pc_count == sum(nobet[(d, g)] for g in pc_gun_indisleri))
+            # pc_sayaclari.append(pc_count)
+
+        # for g in range(gun_sayisi):
+            # model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Ben & Cem
+            # model.Add(sum(nobet[(d, g)] for d in g1) <= 1)
+            # model.Add(sum(nobet[(d, g)] for d in g2) <= 1)
+
+            # if g < gun_sayisi - 1:
+                # for d in range(doktor_sayisi):
+                    # model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
+
+
+        dahil_olanlar = [d for d in range(doktor_sayisi) if d not in hariç_idx]
+
         for d in range(doktor_sayisi):
-            pc_count = model.NewIntVar(0, len(pc_gun_indisleri), f'pc_count_{d}')
-            model.Add(pc_count == sum(nobet[(d, g)] for g in pc_gun_indisleri))
-            pc_sayaclari.append(pc_count)
-
-        for g in range(gun_sayisi):
-            model.Add(nobet[(0, g)] + nobet[(1, g)] <= 1) # Ben & Cem
-            model.Add(sum(nobet[(d, g)] for d in g1) <= 1)
-            model.Add(sum(nobet[(d, g)] for d in g2) <= 1)
-
-            if g < gun_sayisi - 1:
-                for d in range(doktor_sayisi):
-                    model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
+            for g in range(gun_sayisi):
+                # Eğer doktor "dahil olanlar" listesindeyse (normal kotalıysa)
+                if d in dahil_olanlar:
+                    # Bugün nöbet tuttuysa, sonraki 2 gün tutamaz (Toplam 3 günlük blokta sadece 1 nöbet)
+                    # g, g+1, g+2 toplamı <= 1
+                    aralik = [g, g+1, g+2]
+                    valid_aralik = [i for i in aralik if i < gun_sayisi]
+                    if len(valid_aralik) > 1:
+                        model.Add(sum(nobet[(d, i)] for i in valid_aralik) <= 1)
+                else:
+                    # Yüksek kotalı veya hariç tutulanlar için sadece klasik 
+                    # "üst üste tutamaz" (1 gün boşluk) kuralı geçerli kalsın
+                    if g < gun_sayisi - 1:
+                        model.Add(nobet[(d, g)] + nobet[(d, g+1)] <= 1)
 
 
         
@@ -330,3 +351,4 @@ else:
             )
         else:
             st.error("❌ Çözüm bulunamadı! Lütfen kotaları veya sabit nöbetçileri kontrol edin.")
+
