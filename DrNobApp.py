@@ -316,22 +316,64 @@ else:
                     "Nöbet Tarihleri": ", ".join(nobet_tarihleri)
                 })
             
-            # --- EXCEL OLUŞTURMA (2 SAYFALI) ---
+# --- 3. SHEET: TAKVİM GÖRÜNÜMÜ (KUTU KUTU) ---
+            # Ayın tüm günlerini kapsayan bir matris oluşturalım
+            takvim_verisi = []
+            hafta = [""] * 5  # Sadece hafta içi (Pzt, Sal, Çar, Per, Cum)
+            
+            # Ayın ilk gününden son gününe kadar bir döngü
+            ilk_gun_ay = datetime(int(yil), int(ay), 1)
+            temp_date = ilk_gun_ay
+            
+            while temp_date.month == int(ay):
+                wd = temp_date.weekday()
+                if wd < 5:  # Sadece hafta içi
+                    # Bu tarihteki nöbetçileri bul
+                    tarih_str = temp_date.strftime('%d.%m.%Y')
+                    gun_nobetcileri = next((g["Nöbetçiler"] for g in res_data if g["Tarih"] == tarih_str), "TATİL/BOŞ")
+                    
+                    # Hücre içeriği: "GÜN \n İSİMLER"
+                    hafta[wd] = f"{temp_date.day}\n---\n{gun_nobetcileri.replace(', ', '\n')}"
+                
+                # Cuma bittiyse veya ayın son günü ise satırı ekle
+                if wd == 4 or (temp_date + timedelta(days=1)).month != int(ay):
+                    if any(hafta): # Eğer haftada en az bir gün doluysa
+                        takvim_verisi.append(hafta)
+                    hafta = [""] * 5
+                
+                temp_date += timedelta(days=1)
+
+            df_takvim = pd.DataFrame(takvim_verisi, columns=["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma"])
+
+            # --- EXCEL YAZDIRMA (3 SAYFALI) ---
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # 1. Sayfa: Genel Liste
-                pd.DataFrame(res_data).to_excel(writer, index=False, sheet_name='Günlük Nöbet Listesi')
+                # Sayfa 1: Günlük Liste
+                pd.DataFrame(res_data).to_excel(writer, index=False, sheet_name='Günlük Liste')
                 
-                # 2. Sayfa: Doktor Bazlı Özet
+                # Sayfa 2: Doktor Bazlı Özet
                 pd.DataFrame(yatay_ozet).to_excel(writer, index=False, sheet_name='Doktor Bazlı Takvim')
-            
+                
+                # Sayfa 3: Kutu Takvim
+                df_takvim.to_excel(writer, index=False, sheet_name='Görsel Takvim')
+                
+                # Excel Hücrelerini Güzelleştirme (Genişlik Ayarı)
+                workbook = writer.book
+                worksheet = writer.sheets['Görsel Takvim']
+                for col in worksheet.columns:
+                    column = col[0].column_letter
+                    worksheet.column_dimensions[column].width = 25 # Kutuları genişlet
+                    for cell in col:
+                        cell.alignment = tk.openpyxl.styles.Alignment(wrapText=True, vertical='top', horizontal='center')
+
             st.download_button(
-                label="📥 Detaylı Excel İndir",
+                label="📥 Takvimli Excel İndir",
                 data=output.getvalue(),
-                file_name=f"nobet_detayli_{yil}_{ay}.xlsx",
+                file_name=f"nobet_profesyonel_{yil}_{ay}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
             st.error("❌ Çözüm bulunamadı! Lütfen kotaları veya sabit nöbetçileri kontrol edin.")
+
 
 
